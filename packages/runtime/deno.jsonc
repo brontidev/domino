@@ -1,0 +1,25 @@
+{
+  "name": "@domino/runtime",
+  "version": "0.1.0",
+  "exports": {
+    ".": "./mod.ts",
+    "./internal": "./internal.ts",
+
+    "./define": "./define.ts",
+    "./dom": "./dom.ts",
+    "./state": "./state.ts",
+    "./state_proxy": "./state_proxy.ts"
+  },
+  "tasks": {
+    "dev": "deno test --watch"
+  },
+  "license": "MIT",
+  "imports": {},
+  "compilerOptions": {
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ]
+  }
+}
