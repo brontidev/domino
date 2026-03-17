@@ -6,7 +6,7 @@ import type {
   Piece,
 } from "./types.ts";
 import { CommentNode, HTMLElement, parse } from "node-html-parser";
-import { err, ok, type Result } from "@bronti/robust";
+import { err, ok, type Result } from "@bronti/robust/Result";
 
 export abstract class AnalyzeError extends Error {}
 
@@ -17,12 +17,12 @@ export class DuplicatePieceError extends AnalyzeError {
 }
 
 /**
- * Gets the path of a node (an array of indexes relative to document)
+ * Gets the path of a node (array of indexes relative to ancestor)
  */
-function get_node_path(node: HTMLElement): number[] {
-  const path = [];
+function get_node_path(node: HTMLElement, ancestor: HTMLElement): number[] {
+  const path: number[] = [];
 
-  while (node.parentNode) {
+  while (node !== ancestor && node.parentNode) {
     const parent = node.parentNode;
     const idx = parent.childNodes.indexOf(node);
 
@@ -37,18 +37,19 @@ function match_directives(
   document: HTMLElement,
   parent?: HTMLElement,
 ): HTMLElement[] {
-  return (parent ?? document).querySelectorAll(
-    "[d-piece], d-text[piece], d-if[piece], d-each[piece]",
-  ).filter((el) => {
-    const closest = el.closest("d-if, d-each");
-    return parent ? closest == parent : !closest;
-  });
-}
+  return document
+    .querySelectorAll("[d-piece], d-text[piece], d-if[piece]")
+    .filter((el) => {
+      const tag = el.tagName.toLowerCase();
+      const enclosing = tag === "d-if"
+        ? (el.parentNode instanceof HTMLElement
+          ? el.parentNode.closest("d-if")
+          : null)
+        : el.closest("d-if");
 
-export function analyze(
-  source: string | HTMLElement,
-  compiling: false,
-): Result<Component, AnalyzeError>;
+      return parent ? enclosing === parent : !enclosing;
+    });
+}
 
 export function analyze(
   source: string | HTMLElement,
@@ -57,23 +58,57 @@ export function analyze(
 
 export function analyze(
   source: string | HTMLElement,
+  compiling: false,
+): Result<Component, AnalyzeError>;
+
+export function analyze(
+  source: string | HTMLElement,
   compiling: boolean,
 ): Result<Component | ComponentWithHTML, AnalyzeError> {
-  const document = (source instanceof HTMLElement ? source : parse(source))
-    .removeWhitespace();
+  const document = source instanceof HTMLElement ? source : parse(source);
 
-  const pieces = new Map<string, FullPiece>();
+  document.removeWhitespace();
+  return analyze_internal(document, compiling, false);
+}
 
-  for (
-    const element of match_directives(document)
-  ) {
-    const path = get_node_path(element);
-    console.log(element.tagName);
+function analyze_internal(
+  document: HTMLElement,
+  compiling: boolean,
+  isRecursive: boolean,
+): Result<Component | ComponentWithHTML, AnalyzeError> {
+  const pieces = new Map<string, FullPiece<Component | ComponentWithHTML>>();
+
+  const directives = match_directives(
+    document,
+    isRecursive ? document : undefined,
+  );
+
+  for (const element of directives) {
+    const path = get_node_path(element, document);
+    const tag = element.tagName.toLowerCase();
 
     let name: string;
-    let piece: Piece;
+    let piece: Piece<Component | ComponentWithHTML>;
+    if (tag === "d-if") {
+      name = element.getAttribute("piece")!;
 
-    if (element.tagName == "d-piece") {
+      const result = analyze_internal(element, compiling, true);
+      if (!result.isOk()) return result;
+
+      const if_analyzed = result.unwrap();
+
+      piece = {
+        kind: PieceKind.If,
+        pieces: if_analyzed.pieces,
+      };
+
+      // This code is ugly but it's the least ugly option that makes typescript stop yelping
+      if (compiling && "html_inject" in if_analyzed) {
+        (piece as unknown as ComponentWithHTML).html_inject =
+          if_analyzed.html_inject;
+        element.replaceWith(new CommentNode("domino_piece"));
+      }
+    } else if (tag === "d-text") {
       name = element.getAttribute("piece")!;
       const raw = element.hasAttribute("raw");
 
@@ -83,8 +118,6 @@ export function analyze(
       };
 
       if (compiling) {
-        element.removeAttribute("piece");
-        element.removeAttribute("raw");
         element.replaceWith(new CommentNode("domino_piece"));
       }
     } else {
@@ -92,16 +125,20 @@ export function analyze(
 
       piece = {
         kind: PieceKind.Element,
-        element_tag: element.tagName.toLowerCase(),
+        element_tag: tag,
       };
 
-      if (compiling) element.removeAttribute("d-piece");
+      if (compiling) {
+        element.removeAttribute("d-piece");
+      }
     }
 
     if (pieces.has(name)) {
-      // for now just ignore duplicates when doing typegen/linting
-      if (!compiling) continue;
-      return err(new DuplicatePieceError(name));
+      if (compiling) {
+        return err(new DuplicatePieceError(name));
+      }
+
+      continue;
     }
 
     pieces.set(name, {
@@ -111,16 +148,14 @@ export function analyze(
     });
   }
 
-  const component: Component = {
-    pieces: Array.from(pieces.values()),
-  };
-
   if (compiling) {
     return ok({
-      ...component,
+      pieces: Array.from(pieces.values()) as FullPiece<ComponentWithHTML>[],
       html_inject: document.toString(),
     });
   }
 
-  return ok(component);
+  return ok({
+    pieces: Array.from(pieces.values()) as FullPiece<Component>[],
+  });
 }

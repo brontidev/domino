@@ -1,13 +1,15 @@
 {
   "name": "@domino/analyzer",
   "version": "0.1.0",
-  "exports": "./mod.ts",
+  "exports": {
+    ".": "./mod.ts",
+    "./types": "./types.ts"
+  },
   "tasks": {
     "dev": "deno test --watch"
   },
   "license": "MIT",
   "imports": {
-    "@bronti/robust": "jsr:@bronti/robust@0.0.3-beta",
     "node-html-parser": "npm:node-html-parser@^7.1.0"
   }
 }

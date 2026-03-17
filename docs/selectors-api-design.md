@@ -4,7 +4,7 @@
 Current API lacks granular reactivity for nested states. Svelte's store→runes migration teaches us: flat state + computed properties fail at scale. We need **path-tracking updates** that notify only affected subscribers, without compiler magic or automatic tracking.
 
 ## Proposed Solution
-Introduce **selector-based memoization**: selectors read only the data they need, and callbacks only fire when the selector output changes. Support both instance methods (`state.effect()`) and module functions (`effect(...states)`).
+Introduce **selector-based memoization** via a fluent `.select()` API: selectors read only the data they need, and callbacks only fire when the selector output changes. Leverage existing `.derive()` under the hood; `.select()` is a semantic alias that returns a derived state.
 
 ---
 
@@ -12,9 +12,10 @@ Introduce **selector-based memoization**: selectors read only the data they need
 
 1. **Selectors are pure functions**: `(value: T) => U` — read what you need, return the computed result
 2. **Memoization by output equality**: If selector output hasn't changed, callback doesn't fire
-3. **Instance vs module API**: Both available; instance is ergonomic for single-state, module for multi-state
-4. **Backwards compatible**: Existing `state.effect(cb)` still works (implicitly `state.effect(v => v, cb)`)
-5. **Nested reactivity without arrays**: Supports deep property access like `(u) => u.user.profile.name`
+3. **Fluent `.select()` API**: Use `.select(selector)` to create a derived state, then `.effect()` or `.subscribe()` on it
+4. **Backwards compatible**: Existing `.effect(cb)` and `.subscribe(cb)` stay unchanged
+5. **Single implementation point**: All selector logic lives in `.derive()` (memoization happens there)
+6. **Semantic clarity**: `.select()` is an alias to `.derive()` with clearer intent when chaining
 
 ---
 
@@ -22,153 +23,115 @@ Introduce **selector-based memoization**: selectors read only the data they need
 
 ### Single-State (Instance Methods)
 
-#### `state.effect(selector, callback)` — With selector memoization
+#### `state.effect(callback)` — Legacy (unchanged)
 ```ts
 const user = create_state({ name: "Alice", age: 30 });
 
-// Fires when user.name changes (shallow equality on output)
-user.effect(
-  (u) => u.name,  // selector: read only .name
-  (name) => console.log(name)  // callback: fires when output changes
-);
-
-// Fires when entire user object changes (always different reference)
-user.effect(
-  (u) => u,  // selector: return whole value
-  (u) => console.log(u)
-);
-
-// Fires only when computed result changes
-user.effect(
-  (u) => `${u.name} (${u.age})`,  // selector: string
-  (display) => console.log(display)
-);
-```
-
-#### `state.effect(callback)` — Backwards compat (no selector)
-```ts
-// Old API still works: fires on any mutation
+// Fires immediately (if initialized) + on any mutation
 user.effect((u) => {
-  console.log("user changed", u);
+  console.log("user changed:", u);
 });
 ```
 
-#### `state.subscribe(selector, callback)` — Same as effect, but called immediately? No, only on change
+#### `state.subscribe(callback)` — Legacy (unchanged)
 ```ts
-// Similar to effect, but what's the difference?
-// Answer: effect() fires immediately if state is initialized; subscribe() waits for first change
-user.subscribe(
-  (u) => u.name,
-  (name) => console.log(name)  // doesn't fire until user mutates
-);
+// Fires only on subsequent mutations (not immediately)
+user.subscribe((u) => {
+  console.log("user changed:", u);
+});
 ```
 
-#### `state.derive(selector)` — Create derived state with selector memoization
+#### `state.select(selector)` — New: returns derived state with memoization
 ```ts
-// Fires when selector output changes
-const displayName = user.derive((u) => `${u.name} (${u.age})`);
+const user = create_state({ name: "Alice", age: 30 });
 
-// Later: whenever user changes, if display name is different, displayName state updates
-displayName.get();  // "Alice (30)"
+// select() returns a ReadableState<U> (via derive() under the hood)
+// Then chain .effect() or .subscribe() on it
+user.select((u) => u.name).effect((name) => {
+  console.log("name changed:", name);
+});
+
+// With subscribe (fires on mutations only)
+user.select((u) => u.name).subscribe((name) => {
+  console.log("name changed:", name);
+});
+
+// Complex selectors
+user.select((u) => `${u.name} (age ${u.age})`)
+    .effect((display) => console.log(display));
+```
+
+#### `state.derive(selector)` — Direct use (same as .select())
+```ts
+// Both are identical—select() is an alias to derive()
+const name = user.derive((u) => u.name);
+name.effect((n) => console.log(n));
 ```
 
 ---
 
 ### Multi-State (Module Functions)
 
-#### `effect(selector, callback, ...states)` — Multi-state with selector
+#### Legacy multi-state APIs (unchanged)
 ```ts
-const user = create_state({ name: "Alice", age: 30 });
-const settings = create_state({ theme: "dark", locale: "en" });
+const user = create_state({ name: "Alice" });
+const settings = create_state({ theme: "dark" });
 
-// Selector receives all state values in order
-effect(
-  (u, s) => `${u.name} uses ${s.theme}`,
-  (result) => console.log(result),
-  user,
-  settings
-);
+// effect(...states) — fires immediately + on mutations
+effect((u, s) => {
+  console.log(`${u.name} uses ${s.theme}`);
+}, user, settings);
 
-// Fires only when this specific combination changes
-effect(
-  (u, s) => u.age > 18 && s.locale === "en",
-  (isAdult) => console.log(isAdult),
-  user,
-  settings
-);
-
-// Complex selector across multiple states
-effect(
-  (u, s, cart) => ({
-    user: u.name,
-    items: cart.length,
-    theme: s.theme,
-  }),
-  (combined) => updateUI(combined),
-  user,
-  settings,
-  cartState
-);
+// subscribe(...states) — fires on mutations only
+subscribe((u, s) => {
+  console.log(`${u.name} uses ${s.theme}`);
+}, user, settings);
 ```
 
-#### `subscribe(selector, callback, ...states)` — Multi-state subscribe (wait for first change)
-```ts
-subscribe(
-  (u, s) => u.name + s.theme,
-  (result) => console.log(result),
-  user,
-  settings
-);
-```
-
-#### `derived(selector, ...states)` — Multi-state derived with memoization
+#### `derived(selector, ...states)` — Multi-state with memoization (NEW)
 ```ts
 // Returns ReadableState<U>
+// Selector only runs when any source state mutates
+// Callback fires only when selector output changes
 const displayInfo = derived(
   (u, s) => `${u.name} (${s.theme})`,
   user,
   settings
 );
 
-// Re-runs selector only when any state mutates, but callback fires only if output changed
+// Then chain effect or subscribe
 displayInfo.effect((info) => console.log(info));
+displayInfo.subscribe((info) => console.log(info));
 ```
 
 ---
 
 ## Use Cases (Comprehensive)
 
-### UC1: Simple single-state subscription
+### UC1: Simple single-state subscription (legacy)
 ```ts
 const count = create_state(0);
 
-count.effect(
-  (c) => c,  // identity selector
-  (value) => console.log("count:", value)
-);
+count.effect((c) => console.log("count:", c));
 ```
 
-### UC2: Filtering/mapping single state
+### UC2: Filtering/mapping single state (with selector)
 ```ts
 const todos = create_state([
   { id: 1, done: false },
   { id: 2, done: true },
 ]);
 
-// Selector maps to computed value
-todos.effect(
-  (t) => t.filter(x => !x.done),  // only incomplete todos
-  (incomplete) => console.log(incomplete.length + " remaining")
-);
+// Select incomplete todos, fire only when filtered result changes
+todos.select((t) => t.filter(x => !x.done))
+     .effect((incomplete) => console.log(incomplete.length + " remaining"));
 
-// Fires only when .length of filtered array changes
-todos.effect(
-  (t) => t.filter(x => !x.done).length,
-  (count) => updateBadge(count)
-);
+// Select count only
+todos.select((t) => t.filter(x => !x.done).length)
+     .effect((count) => updateBadge(count));
 ```
 
-### UC3: Deep nested property access
+### UC3: Deep nested property access (with selector)
 ```ts
 const app = create_state({
   user: {
@@ -180,56 +143,50 @@ const app = create_state({
 });
 
 // Memoized: fires only when user.profile.name changes
-app.effect(
-  (a) => a.user.profile.name,
-  (name) => console.log(name)
-);
+app.select((a) => a.user.profile.name)
+   .effect((name) => console.log(name));
 ```
 
-### UC4: Combining multiple states
+### UC4: Combining multiple states (multi-state derived)
 ```ts
 const userState = create_state({ name: "Alice" });
 const cartState = create_state({ items: 5 });
 
-effect(
+derived(
   (user, cart) => `${user.name} has ${cart.items} items`,
-  (display) => console.log(display),
   userState,
   cartState
-);
-
-// Only one callback fires per update cycle, even if both states change
+).effect((display) => console.log(display));
 ```
 
-### UC5: Conditional logic across states
+### UC5: Conditional logic across states (multi-state derived)
 ```ts
 const isLoggedIn = create_state(false);
 const userRole = create_state("guest");
 
-effect(
+derived(
   (loggedIn, role) => loggedIn && role === "admin",
-  (isAdmin) => showAdminPanel(isAdmin),
   isLoggedIn,
   userRole
-);
+).effect((isAdmin) => showAdminPanel(isAdmin));
 ```
 
 ### UC6: Derived state from derived state (chaining)
 ```ts
 const user = create_state({ age: 25 });
 
-const isAdult = user.derive((u) => u.age >= 18);
-const message = isAdult.derive((adult) => adult ? "Welcome" : "Too young");
+const isAdult = user.select((u) => u.age >= 18);
+const message = isAdult.select((adult) => adult ? "Welcome" : "Too young");
 
 message.effect((msg) => console.log(msg));  // "Welcome"
 ```
 
-### UC7: Complex selector returning object
+### UC7: Complex selector returning object (with selector)
 ```ts
 const user = create_state({ name: "Alice", bio: "Engineer" });
 const posts = create_state([]);
 
-const profile = derived(
+derived(
   (u, p) => ({
     name: u.name,
     bio: u.bio,
@@ -238,35 +195,29 @@ const profile = derived(
   }),
   user,
   posts
-);
-
-profile.effect((p) => renderCard(p));
+).effect((p) => renderCard(p));
 ```
 
-### UC8: Array mutations should NOT auto-track
+### UC8: Array element/length tracking (with selector)
 ```ts
 const items = create_state(["a", "b"]);
 
-// Selector reads array, returns specific element
-items.effect(
-  (arr) => arr[0],
-  (first) => console.log(first)  // fires when first element changes
-);
+// Select specific element
+items.select((arr) => arr[0])
+     .effect((first) => console.log(first));
 
-// Selector counts items
-items.effect(
-  (arr) => arr.length,
-  (len) => console.log(len)  // fires when length changes
-);
+// Select length
+items.select((arr) => arr.length)
+     .effect((len) => console.log(len));
 ```
 
-### UC9: Transition state (multi-source derived)
+### UC9: Transition state (multi-state derived)
 ```ts
 const fromState = create_state({ x: 0, y: 0 });
 const toState = create_state({ x: 100, y: 100 });
 const progress = create_state(0);
 
-const interpolated = derived(
+derived(
   (from, to, p) => ({
     x: from.x + (to.x - from.x) * p,
     y: from.y + (to.y - from.y) * p,
@@ -274,23 +225,20 @@ const interpolated = derived(
   fromState,
   toState,
   progress
-);
-
-interpolated.effect((pos) => element.style.transform = `translate(${pos.x}px, ${pos.y}px)`);
+).effect((pos) => element.style.transform = `translate(${pos.x}px, ${pos.y}px)`);
 ```
 
-### UC10: Debounced selector (side effect in selector)
+### UC10: Subscribe vs Effect distinction (selectors respect the difference)
 ```ts
-const searchQuery = create_state("");
+const search = create_state("");
 
-searchQuery.effect(
-  (query) => {
-    // Selector can have side effects (though not recommended)
-    // Better: use selector to get debounced value from external state
-    return query.trim().toLowerCase();
-  },
-  (q) => performSearch(q)
-);
+// Effect: fires immediately + on mutations
+search.select((s) => s.trim().toLowerCase())
+      .effect((q) => console.log("initial:", q));
+
+// Subscribe: fires on mutations only
+search.select((s) => s.trim().toLowerCase())
+      .subscribe((q) => console.log("changed:", q));
 ```
 
 ---

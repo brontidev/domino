@@ -2,6 +2,8 @@
   "version": "5",
   "specifiers": {
     "jsr:@bronti/robust@0.0.3-beta": "0.0.3-beta",
+    "npm:astring@^1.9.0": "1.9.0",
+    "npm:node-estree@4": "4.0.0",
     "npm:node-html-parser@*": "7.1.0",
     "npm:node-html-parser@^7.1.0": "7.1.0"
   },
@@ -11,6 +13,13 @@
     }
   },
   "npm": {
+    "@slimio/is@2.0.0": {
+      "integrity": "sha512-aEwQVndB4uVQsJ55HJjff3dnETpa2EfkNeAK/ldxT0VeqaNG9Q/zcCBmrRKJ9jsE9sXI4HsDUCotVBVswVKB+w=="
+    },
+    "astring@1.9.0": {
+      "integrity": "sha512-LElXdjswlqjWrPpJFg1Fx4wpkOCxj1TDHlSV4PlaRxHGWko024xICaa97ZkMfs6DRKlCguiAI+rbXv5GWwXIkg==",
+      "bin": true
+    },
     "boolbase@1.0.0": {
       "integrity": "sha512-JZOSA7Mo9sNGB8+UjSgzdLtokWAky1zbztM3WRLCbZ70/3cTANmQmOdR7y2g+J0e2WXywy1yS468tY+IruqEww=="
     },
@@ -59,6 +68,12 @@
       "integrity": "sha512-F/1DnUGPopORZi0ni+CvrCgHQ5FyEAHRLSApuYWMmrbSwoN2Mn/7k+Gl38gJnR7yyDZk6WLXwiGod1JOWNDKGw==",
       "bin": true
     },
+    "node-estree@4.0.0": {
+      "integrity": "sha512-XMU4U91meO+XFZaZLqkr7iEZdje7ftiqx4hlQ0LMb6h+gJBPgzSTeU++dUpGxH8v6wdkKrbpf4mifX5vPg8rAg==",
+      "dependencies": [
+        "@slimio/is"
+      ]
+    },
     "node-html-parser@7.1.0": {
       "integrity": "sha512-iJo8b2uYGT40Y8BTyy5ufL6IVbN8rbm/1QK2xffXU/1a/v3AAa0d1YAoqBNYqaS4R/HajkWIpIfdE6KcyFh1AQ==",
       "dependencies": [
@@ -74,11 +89,19 @@
     }
   },
   "workspace": {
+    "dependencies": [
+      "jsr:@bronti/robust@0.0.3-beta"
+    ],
     "members": {
       "packages/analyzer": {
         "dependencies": [
-          "jsr:@bronti/robust@0.0.3-beta",
           "npm:node-html-parser@^7.1.0"
+        ]
+      },
+      "packages/compiler": {
+        "dependencies": [
+          "npm:astring@^1.9.0",
+          "npm:node-estree@4"
         ]
       }
     }

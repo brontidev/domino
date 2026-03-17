@@ -1,4 +1,6 @@
 {
-    "workspace": ["packages/runtime", "packages/analyzer"],
-
+  "workspace": ["packages/*"],
+  "imports": {
+    "@bronti/robust": "jsr:@bronti/robust@0.0.3-beta"
+  }
 }
