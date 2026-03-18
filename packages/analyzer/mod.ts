@@ -3,7 +3,10 @@ import type {
   Component,
   ComponentWithHTML,
   FullPiece,
+  FullTile,
+  IfPiece,
   Piece,
+  Tile,
 } from "./types.ts";
 import { CommentNode, HTMLElement, parse } from "node-html-parser";
 import { err, ok, type Result } from "@bronti/robust/Result";
@@ -13,6 +16,22 @@ export abstract class AnalyzeError extends Error {}
 export class DuplicatePieceError extends AnalyzeError {
   constructor(readonly piece_name: string) {
     super(`Piece \`${piece_name}\` duplicated`);
+  }
+}
+
+export class InvalidTileError extends AnalyzeError {
+  constructor(readonly tile_name: string) {
+    super(
+      `Tile \`${tile_name}\` is in an invalid spot, a tile must be top-level and not nested inside of any other directive or tile`,
+    );
+  }
+}
+
+export class NestedTileError extends InvalidTileError {
+  constructor(override readonly tile_name: string) {
+    super(
+      `Tile \`${tile_name}\` is nested inside of another tile, which is not allowed`,
+    );
   }
 }
 
@@ -43,9 +62,9 @@ function match_directives(
       const tag = el.tagName.toLowerCase();
       const enclosing = tag === "d-if"
         ? (el.parentNode instanceof HTMLElement
-          ? el.parentNode.closest("d-if")
+          ? el.parentNode.closest("d-if, d-tile")
           : null)
-        : el.closest("d-if");
+        : el.closest("d-if, d-tile");
 
       return parent ? enclosing === parent : !enclosing;
     });
@@ -68,20 +87,76 @@ export function analyze(
   const document = source instanceof HTMLElement ? source : parse(source);
 
   document.removeWhitespace();
-  return analyze_internal(document, compiling, false);
+  return analyze_internal(document, compiling);
 }
 
 function analyze_internal(
   document: HTMLElement,
   compiling: boolean,
-  isRecursive: boolean,
+  is_recursing: boolean = false,
+  in_tile: boolean = false,
 ): Result<Component | ComponentWithHTML, AnalyzeError> {
   const pieces = new Map<string, FullPiece<Component | ComponentWithHTML>>();
+  const tiles = new Map<string, Tile<Component | ComponentWithHTML>>();
 
   const directives = match_directives(
     document,
-    isRecursive ? document : undefined,
+    is_recursing ? document : undefined,
   );
+
+  for (const tile of document.querySelectorAll("d-tile[name]")) {
+    const name = tile.getAttribute("name")!;
+        const path = get_node_path(tile, document);
+
+    if (in_tile) return err(new NestedTileError(name));
+    if (tile.parentNode.closest("d-tile, d-if, [d-piece]")) {
+      // not sure if this if statement is even needed
+      return err(new InvalidTileError(name));
+    }
+
+    const result = analyze_internal(tile, compiling, true, true);
+    if (!result.isOk()) return result;
+
+    const analyzed_tile = result.unwrap();
+
+    if (compiling) {
+      tiles.set(name, {
+        pieces: analyzed_tile.pieces,
+        html_inject: analyzed_tile.html_inject,
+        path,
+      });
+      tile.remove()
+      continue;
+    }
+    tiles.set(name, {
+      pieces: analyzed_tile.pieces,
+      path,
+    });
+  }
+
+  // else if (tag === "d-tile") {
+  //       name = element.getAttribute("name")!;
+
+  //       if (element.querySelector("d-tile[name]")) {
+  //         return err(new NestedTileError(name));
+  //       }
+
+  //       const result = analyze_internal(element, compiling, true);
+  //       if (!result.isOk()) return result;
+
+  //       const tile_analyzed = result.unwrap();
+
+  //       piece = {
+  //         kind: PieceKind.Tile,
+  //         pieces: tile_analyzed.pieces,
+  //       };
+
+  //       if (compiling && "html_inject" in tile_analyzed) {
+  //         (piece as TilePiece<ComponentWithHTML>).html_inject =
+  //           tile_analyzed.html_inject;
+  //         element.replaceWith(new CommentNode("domino_piece"));
+  //       }
+  //     }
 
   for (const element of directives) {
     const path = get_node_path(element, document);
@@ -104,7 +179,7 @@ function analyze_internal(
 
       // This code is ugly but it's the least ugly option that makes typescript stop yelping
       if (compiling && "html_inject" in if_analyzed) {
-        (piece as unknown as ComponentWithHTML).html_inject =
+        (piece as IfPiece<ComponentWithHTML>).html_inject =
           if_analyzed.html_inject;
         element.replaceWith(new CommentNode("domino_piece"));
       }
@@ -151,11 +226,13 @@ function analyze_internal(
   if (compiling) {
     return ok({
       pieces: Array.from(pieces.values()) as FullPiece<ComponentWithHTML>[],
+      tiles: Array.from(tiles.entries().map<FullTile<ComponentWithHTML>>(([name, tile]) => ({ name, ...tile }))),
       html_inject: document.toString(),
     });
   }
 
   return ok({
     pieces: Array.from(pieces.values()) as FullPiece<Component>[],
+    tiles: Array.from(tiles.entries().map<FullTile<ComponentWithHTML>>(([name, tile]) => ({ name, ...tile }))),
   });
 }

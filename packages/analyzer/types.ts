@@ -1,3 +1,5 @@
+import { CopyOptions } from "node:fs";
+
 export enum PieceKind {
   Element,
   Text,
@@ -19,6 +21,11 @@ export type IfPiece<TComponent extends ComponentWithHTML | Component> = {
   pieces: Piece<TComponent>[];
 } & (TComponent extends ComponentWithHTML ? { html_inject: string } : {});
 
+export type Tile<TComponent extends ComponentWithHTML | Component> = {
+  pieces: Piece<TComponent>[];
+  path: number[];
+} & (TComponent extends ComponentWithHTML ? { html_inject: string } : {});
+
 export type Piece<TComponent extends ComponentWithHTML | Component> =
   | ElementPiece
   | TextPiece
@@ -31,11 +38,19 @@ export type FullPiece<TComponent extends ComponentWithHTML | Component> =
     name: string;
   };
 
+export type FullTile<TComponent extends ComponentWithHTML | Component> =
+  & Tile<TComponent>
+  & {
+    name: string;
+  };
+
 export interface Component {
-  pieces: Piece<Component>[];
+  pieces: FullPiece<Component>[];
+  tiles: FullTile<Component>[];
 }
 
 export interface ComponentWithHTML {
-  pieces: Piece<ComponentWithHTML>[];
+  pieces: FullPiece<ComponentWithHTML>[];
+  tiles: FullTile<ComponentWithHTML>[];
   html_inject: string;
 }
