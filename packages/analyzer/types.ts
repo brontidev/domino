@@ -17,13 +17,15 @@ export interface ElementPiece {
 export type IfPiece<TComponent extends ComponentWithHTML | Component> = {
   kind: PieceKind.If;
   pieces: FullPiece<TComponent>[];
-    // @ts-ignore: using Record<PropertyKey, never> breaks types
+  // using Record<PropertyKey, never> breaks types
+  // deno-lint-ignore ban-types
 } & (TComponent extends ComponentWithHTML ? { html_inject: string } : {});
 
 export type Tile<TComponent extends ComponentWithHTML | Component> = {
   pieces: FullPiece<TComponent>[];
   path: number[];
-  // @ts-ignore: using Record<PropertyKey, never> breaks types
+  // using Record<PropertyKey, never> breaks types
+  // deno-lint-ignore ban-types
 } & (TComponent extends ComponentWithHTML ? { html_inject: string } : {});
 
 export type Piece<TComponent extends ComponentWithHTML | Component> =

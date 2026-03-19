@@ -8,14 +8,44 @@ export type OptimizedPathKind =
   | "next_sibling"
   | "relative_parent";
 
-export type OptimizedPath = {
+type OptimizedPathBase<TMode extends OptimizedPathKind, TPath extends number[]> = {
   piece: Piece;
-  mode: OptimizedPathKind;
-  path: number[];
-  from?: string;
-  relative_parent_path?: number[];
-  idx?: number
+  mode: TMode;
+  path: TPath;
 };
+
+export type AbsoluteOptimizedPath = OptimizedPathBase<"absolute", number[]> & {
+  from?: never;
+  relative_parent_path?: never;
+  idx?: never;
+};
+
+export type ChildOptimizedPath = OptimizedPathBase<"child", number[]> & {
+  from: string;
+  relative_parent_path?: never;
+  idx?: never;
+};
+
+export type NextSiblingOptimizedPath = OptimizedPathBase<"next_sibling", []> & {
+  from: string;
+  relative_parent_path?: never;
+  idx?: never;
+};
+
+export type RelativeParentOptimizedPath =
+  OptimizedPathBase<"relative_parent", [number, ...number[]]> & {
+    // Compiler can cache a resolved parent node using this generated key.
+    idx: number;
+    // Absolute path to the shared parent used for sibling lookup.
+    relative_parent_path: number[];
+    from?: never;
+  };
+
+export type OptimizedPath =
+  | AbsoluteOptimizedPath
+  | ChildOptimizedPath
+  | NextSiblingOptimizedPath
+  | RelativeParentOptimizedPath;
 
 function is_prefix(prefix: number[], target: number[]): boolean {
   if (prefix.length >= target.length) return false;
@@ -35,6 +65,15 @@ function has_same_parent(a: number[], b: number[]): boolean {
   }
 
   return true;
+}
+
+function shared_prefix_length(a: number[], b: number[]): number {
+  const max = Math.min(a.length, b.length);
+  let i = 0;
+
+  while (i < max && a[i] === b[i]) i++;
+
+  return i;
 }
 
 /**
@@ -75,7 +114,19 @@ function has_same_parent(a: number[], b: number[]): boolean {
  */
 export function optimize_paths(pieces: Piece[]): OptimizedPath[] {
   const optimized: OptimizedPath[] = [];
-  let relative_parent_idx = 0
+  let relative_parent_idx = 0;
+  const relative_parent_cache = new Map<string, number>();
+
+  const get_relative_parent_idx = (path: number[]): number => {
+    const key = path.join(",");
+    const cached = relative_parent_cache.get(key);
+
+    if (cached !== undefined) return cached;
+
+    const idx = relative_parent_idx++;
+    relative_parent_cache.set(key, idx);
+    return idx;
+  };
 
   for (const piece of pieces) {
     const previous = optimized.at(-1)?.piece;
@@ -115,13 +166,45 @@ export function optimize_paths(pieces: Piece[]): OptimizedPath[] {
         });
         continue;
       }
+    }
+
+    const prefix_len = shared_prefix_length(previous.path, piece.path);
+
+    // Never emit a relative parent rooted at target ([]).
+    if (prefix_len > 0 && prefix_len < piece.path.length) {
+      const relative_parent_path = piece.path.slice(0, prefix_len);
+      const previous_relative_path = previous.path.slice(prefix_len);
+      const relative_path = piece.path.slice(prefix_len) as [number, ...number[]];
+      const previous_relative_path_tuple = previous_relative_path as [number, ...number[]];
+
+      if (previous_relative_path.length === 0) {
+        optimized.push({
+          piece,
+          mode: "absolute",
+          path: piece.path,
+        });
+        continue;
+      }
+
+      const idx = get_relative_parent_idx(relative_parent_path);
+
+      const previous_optimized = optimized.at(-1)!;
+      if (previous_optimized.mode === "absolute") {
+        optimized[optimized.length - 1] = {
+          piece: previous_optimized.piece,
+          mode: "relative_parent",
+          relative_parent_path,
+          path: previous_relative_path_tuple,
+          idx,
+        };
+      }
 
       optimized.push({
         piece,
         mode: "relative_parent",
-        relative_parent_path: piece.path.slice(0, -1),
-        path: [current_index],
-        idx: relative_parent_idx++
+        relative_parent_path,
+        path: relative_path,
+        idx,
       });
       continue;
     }

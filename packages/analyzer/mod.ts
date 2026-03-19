@@ -39,6 +39,76 @@ export class NestedTileError extends InvalidTileError {
   }
 }
 
+export class InvalidIdentifierError extends AnalyzeError {
+  constructor(readonly kind: "piece" | "tile", readonly invalid_name: string) {
+    super(
+      `${kind[0].toUpperCase()}${kind.slice(1)} name \`${invalid_name}\` is not a valid JavaScript identifier`,
+    );
+  }
+}
+
+const JS_RESERVED_WORDS = new Set([
+  "await",
+  "break",
+  "case",
+  "catch",
+  "class",
+  "const",
+  "continue",
+  "debugger",
+  "default",
+  "delete",
+  "do",
+  "else",
+  "enum",
+  "export",
+  "extends",
+  "false",
+  "finally",
+  "for",
+  "function",
+  "if",
+  "import",
+  "in",
+  "instanceof",
+  "new",
+  "null",
+  "return",
+  "super",
+  "switch",
+  "this",
+  "throw",
+  "true",
+  "try",
+  "typeof",
+  "var",
+  "void",
+  "while",
+  "with",
+  "yield",
+  "implements",
+  "interface",
+  "let",
+  "package",
+  "private",
+  "protected",
+  "public",
+  "static",
+]);
+
+function is_valid_js_identifier(name: string): boolean {
+  if (!/^[$A-Z_a-z][$\w]*$/.test(name)) return false;
+  return !JS_RESERVED_WORDS.has(name);
+}
+
+function validate_identifier(kind: "piece" | "tile", name: string): AnalyzeError | null {
+  if (is_valid_js_identifier(name)) {
+    return null;
+  }
+
+  return new InvalidIdentifierError(kind, name);
+}
+
 type AnalyzeContext = {
   insideDirective: boolean;
   insideTile: boolean;
@@ -121,6 +191,9 @@ function analyze_internal(
 
   for (const tile of match_tiles(document)) {
     const name = tile.getAttribute("name")!;
+    const tile_name_error = validate_identifier("tile", name);
+    if (tile_name_error) return err(tile_name_error);
+
     const path = get_node_path(tile, document);
     const parent = tile.parentNode instanceof HTMLElement ? tile.parentNode : null;
     const enclosing_tile = parent?.closest("d-tile") ?? null;
@@ -181,6 +254,9 @@ function analyze_internal(
     if (tag === "d-if") {
       name = element.getAttribute("piece")!;
 
+      const piece_name_error = validate_identifier("piece", name);
+      if (piece_name_error) return err(piece_name_error);
+
       const result = analyze_internal(parse_fragment(element.innerHTML), compiling, {
         insideDirective: true,
         insideTile: false,
@@ -208,6 +284,9 @@ function analyze_internal(
       }
     } else if (tag === "d-text") {
       name = element.getAttribute("piece")!;
+      const piece_name_error = validate_identifier("piece", name);
+      if (piece_name_error) return err(piece_name_error);
+
       const raw = element.hasAttribute("raw");
 
       piece = {
@@ -220,6 +299,8 @@ function analyze_internal(
       }
     } else {
       name = element.getAttribute("d-piece")!;
+      const piece_name_error = validate_identifier("piece", name);
+      if (piece_name_error) return err(piece_name_error);
 
       piece = {
         kind: PieceKind.Element,
