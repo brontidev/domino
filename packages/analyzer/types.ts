@@ -1,5 +1,3 @@
-import { CopyOptions } from "node:fs";
-
 export enum PieceKind {
   Element,
   Text,
@@ -18,12 +16,14 @@ export interface ElementPiece {
 
 export type IfPiece<TComponent extends ComponentWithHTML | Component> = {
   kind: PieceKind.If;
-  pieces: Piece<TComponent>[];
+  pieces: FullPiece<TComponent>[];
+    // @ts-ignore: using Record<PropertyKey, never> breaks types
 } & (TComponent extends ComponentWithHTML ? { html_inject: string } : {});
 
 export type Tile<TComponent extends ComponentWithHTML | Component> = {
-  pieces: Piece<TComponent>[];
+  pieces: FullPiece<TComponent>[];
   path: number[];
+  // @ts-ignore: using Record<PropertyKey, never> breaks types
 } & (TComponent extends ComponentWithHTML ? { html_inject: string } : {});
 
 export type Piece<TComponent extends ComponentWithHTML | Component> =

@@ -4,9 +4,7 @@ import type {
   ComponentWithHTML,
   FullPiece,
   FullTile,
-  IfPiece,
   Piece,
-  Tile,
 } from "./types.ts";
 import { CommentNode, HTMLElement, parse } from "node-html-parser";
 import { err, ok, type Result } from "@bronti/robust/Result";
@@ -16,6 +14,12 @@ export abstract class AnalyzeError extends Error {}
 export class DuplicatePieceError extends AnalyzeError {
   constructor(readonly piece_name: string) {
     super(`Piece \`${piece_name}\` duplicated`);
+  }
+}
+
+export class DuplicateTileError extends AnalyzeError {
+  constructor(readonly tile_name: string) {
+    super(`Tile \`${tile_name}\` duplicated`);
   }
 }
 
@@ -35,6 +39,11 @@ export class NestedTileError extends InvalidTileError {
   }
 }
 
+type AnalyzeContext = {
+  insideDirective: boolean;
+  insideTile: boolean;
+};
+
 /**
  * Gets the path of a node (array of indexes relative to ancestor)
  */
@@ -52,10 +61,13 @@ function get_node_path(node: HTMLElement, ancestor: HTMLElement): number[] {
   return path;
 }
 
-function match_directives(
-  document: HTMLElement,
-  parent?: HTMLElement,
-): HTMLElement[] {
+function parse_fragment(source: string): HTMLElement {
+  const document = parse(source);
+  document.removeWhitespace();
+  return document;
+}
+
+function match_directives(document: HTMLElement): HTMLElement[] {
   return document
     .querySelectorAll("[d-piece], d-text[piece], d-if[piece]")
     .filter((el) => {
@@ -66,8 +78,12 @@ function match_directives(
           : null)
         : el.closest("d-if, d-tile");
 
-      return parent ? enclosing === parent : !enclosing;
+      return !enclosing;
     });
+}
+
+function match_tiles(document: HTMLElement): HTMLElement[] {
+  return document.querySelectorAll("d-tile[name]");
 }
 
 export function analyze(
@@ -84,104 +100,111 @@ export function analyze(
   source: string | HTMLElement,
   compiling: boolean,
 ): Result<Component | ComponentWithHTML, AnalyzeError> {
-  const document = source instanceof HTMLElement ? source : parse(source);
+  const document = source instanceof HTMLElement ? source : parse_fragment(source);
+  if (source instanceof HTMLElement) {
+    document.removeWhitespace();
+  }
 
-  document.removeWhitespace();
-  return analyze_internal(document, compiling);
+  return analyze_internal(document, compiling, {
+    insideDirective: false,
+    insideTile: false,
+  });
 }
 
 function analyze_internal(
   document: HTMLElement,
   compiling: boolean,
-  is_recursing: boolean = false,
-  in_tile: boolean = false,
+  context: AnalyzeContext,
 ): Result<Component | ComponentWithHTML, AnalyzeError> {
   const pieces = new Map<string, FullPiece<Component | ComponentWithHTML>>();
-  const tiles = new Map<string, Tile<Component | ComponentWithHTML>>();
+  const tiles = new Map<string, FullTile<Component | ComponentWithHTML>>();
 
-  const directives = match_directives(
-    document,
-    is_recursing ? document : undefined,
-  );
-
-  for (const tile of document.querySelectorAll("d-tile[name]")) {
+  for (const tile of match_tiles(document)) {
     const name = tile.getAttribute("name")!;
-        const path = get_node_path(tile, document);
+    const path = get_node_path(tile, document);
+    const parent = tile.parentNode instanceof HTMLElement ? tile.parentNode : null;
+    const enclosing_tile = parent?.closest("d-tile") ?? null;
+    const invalid_enclosing = parent?.closest("d-if, [d-piece]") ?? null;
 
-    if (in_tile) return err(new NestedTileError(name));
-    if (tile.parentNode.closest("d-tile, d-if, [d-piece]")) {
-      // not sure if this if statement is even needed
+    if (context.insideTile || enclosing_tile) {
+      return err(new NestedTileError(name));
+    }
+
+    if (context.insideDirective || invalid_enclosing) {
       return err(new InvalidTileError(name));
     }
 
-    const result = analyze_internal(tile, compiling, true, true);
+    if (tiles.has(name)) {
+      if (compiling) {
+        return err(new DuplicateTileError(name));
+      }
+
+      continue;
+    }
+
+    const result = analyze_internal(parse_fragment(tile.innerHTML), compiling, {
+      insideDirective: false,
+      insideTile: true,
+    });
+
     if (!result.isOk()) return result;
 
-    const analyzed_tile = result.unwrap();
-
     if (compiling) {
+      const analyzed_tile = result.unwrap() as ComponentWithHTML;
+
       tiles.set(name, {
+        name,
         pieces: analyzed_tile.pieces,
         html_inject: analyzed_tile.html_inject,
         path,
       });
-      tile.remove()
+      tile.remove();
       continue;
     }
+
+    const analyzed_tile = result.unwrap() as Component;
+
     tiles.set(name, {
+      name,
       pieces: analyzed_tile.pieces,
       path,
     });
   }
 
-  // else if (tag === "d-tile") {
-  //       name = element.getAttribute("name")!;
-
-  //       if (element.querySelector("d-tile[name]")) {
-  //         return err(new NestedTileError(name));
-  //       }
-
-  //       const result = analyze_internal(element, compiling, true);
-  //       if (!result.isOk()) return result;
-
-  //       const tile_analyzed = result.unwrap();
-
-  //       piece = {
-  //         kind: PieceKind.Tile,
-  //         pieces: tile_analyzed.pieces,
-  //       };
-
-  //       if (compiling && "html_inject" in tile_analyzed) {
-  //         (piece as TilePiece<ComponentWithHTML>).html_inject =
-  //           tile_analyzed.html_inject;
-  //         element.replaceWith(new CommentNode("domino_piece"));
-  //       }
-  //     }
-
-  for (const element of directives) {
+  for (const element of match_directives(document)) {
     const path = get_node_path(element, document);
     const tag = element.tagName.toLowerCase();
 
     let name: string;
     let piece: Piece<Component | ComponentWithHTML>;
+
     if (tag === "d-if") {
       name = element.getAttribute("piece")!;
 
-      const result = analyze_internal(element, compiling, true);
+      const result = analyze_internal(parse_fragment(element.innerHTML), compiling, {
+        insideDirective: true,
+        insideTile: false,
+      });
+
       if (!result.isOk()) return result;
 
-      const if_analyzed = result.unwrap();
+      if (compiling) {
+        const if_analyzed = result.unwrap() as ComponentWithHTML;
 
-      piece = {
-        kind: PieceKind.If,
-        pieces: if_analyzed.pieces,
-      };
+        piece = {
+          kind: PieceKind.If,
+          pieces: if_analyzed.pieces,
+          html_inject: if_analyzed.html_inject,
+        };
 
-      // This code is ugly but it's the least ugly option that makes typescript stop yelping
-      if (compiling && "html_inject" in if_analyzed) {
-        (piece as IfPiece<ComponentWithHTML>).html_inject =
-          if_analyzed.html_inject;
         element.replaceWith(new CommentNode("domino_piece"));
+      } else {
+        const if_analyzed = result.unwrap() as Component;
+
+        piece = {
+          kind: PieceKind.If,
+          pieces: if_analyzed.pieces,
+        };
       }
     } else if (tag === "d-text") {
       name = element.getAttribute("piece")!;
@@ -226,13 +249,13 @@ function analyze_internal(
   if (compiling) {
     return ok({
       pieces: Array.from(pieces.values()) as FullPiece<ComponentWithHTML>[],
-      tiles: Array.from(tiles.entries().map<FullTile<ComponentWithHTML>>(([name, tile]) => ({ name, ...tile }))),
+      tiles: Array.from(tiles.values()) as FullTile<ComponentWithHTML>[],
       html_inject: document.toString(),
     });
   }
 
   return ok({
     pieces: Array.from(pieces.values()) as FullPiece<Component>[],
-    tiles: Array.from(tiles.entries().map<FullTile<ComponentWithHTML>>(([name, tile]) => ({ name, ...tile }))),
+    tiles: Array.from(tiles.values()) as FullTile<Component>[],
   });
 }
