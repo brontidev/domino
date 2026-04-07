@@ -148,7 +148,7 @@ type CompiledScope = {
 const create_template = (template_name: string, source: string) => [
   declare_const(
     template_name,
-    Helpers.AutoChain("document", ["createTemplate"]),
+    Helpers.AutoChain("document", ["createElement", [ESTree.Literal("template")]]),
   ),
   ESTree.ExpressionStatement(
     ESTree.AssignmentExpression(
