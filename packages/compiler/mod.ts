@@ -185,7 +185,7 @@ function compile_scope(
       prelude.push(
         declare_const(
           text_node_name,
-          Helpers.AutoChain("document", ["createTextNode"]),
+          Helpers.AutoChain("document", ["createTextNode", [ESTree.Literal("")]]),
         ),
         Helpers.AutoChain(scoped_piece_name(scope, item.piece.name), [
           "replaceWith",

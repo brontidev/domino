@@ -11,5 +11,9 @@
   "devDependencies": {
     "typescript": "~6.0.2",
     "vite": "^8.0.4"
+  },
+  "dependencies": {
+    "@domino/runtime": "npm:@jsr/domino__runtime",
+    "@domino/vite": "npm:@jsr/domino__vite"
   }
 }

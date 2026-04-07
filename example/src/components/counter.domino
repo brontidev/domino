@@ -1,0 +1,1 @@
+<button type="button" d-piece="button" class="counter">Count is <d-text piece="count" /></button>

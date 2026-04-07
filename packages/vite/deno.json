@@ -1,6 +1,6 @@
 {
     "name": "@domino/vite",
-    "version": "0.1.1",
+    "version": "0.1.2",
     "imports": {
         "vite": "npm:vite@^8.0.7"
     },

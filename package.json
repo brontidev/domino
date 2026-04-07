@@ -1,7 +1,0 @@
-{
-  "dependencies": {},
-  "devDependencies": {
-    "@domino/runtime": "npm:@jsr/domino__runtime",
-    "@domino/vite": "npm:@jsr/domino__vite"
-  }
-}
