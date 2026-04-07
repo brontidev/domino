@@ -6,14 +6,14 @@ import { ESTree, Helpers } from "node-estree";
 import { generate } from "astring";
 
 function create_program(
-  import_name: string,
+  script: string,
   module_level_body: ESTree.Node[] = [],
   function_body: ESTree.Node[] = [],
 ) {
   return ESTree.Program("module", [
     ESTree.ImportDeclaration([
       ESTree.ImportDefaultSpecifier(ESTree.Identifier("_mount")),
-    ], ESTree.Literal(import_name)),
+    ], ESTree.Literal(script)),
     ESTree.ImportDeclaration([
       ESTree.ImportNamespaceSpecifier(ESTree.Identifier("d")),
     ], ESTree.Literal("@domino/runtime/internal")),
@@ -224,7 +224,7 @@ function compile_scope(
         module_level_body,
       );
 
-      piece_value = Helpers.AutoChain("d", ["if", [
+      piece_value = Helpers.AutoChain("d", ["$if", [
         ESTree.Identifier(scoped_piece_name(scope, item.piece.name)),
         ESTree.Identifier(template_name),
         ESTree.ArrowFunctionExpression(
@@ -254,7 +254,7 @@ function compile_scope(
 
 export function compile(
   from: string | ComponentWithHTML,
-  import_name: string,
+  script_name: string,
 ): string {
   const component = typeof from == "string"
     ? or_throw(analyze(from, true))
@@ -266,17 +266,31 @@ export function compile(
 
   const compiled = compile_scope(
     component.pieces as Piece[],
-    ESTree.Identifier("target"),
+    ESTree.Identifier("root"),
     "",
     module_level_body,
   );
 
   const function_body: ESTree.Node[] = [
+    declare_const(
+      "root",
+      Helpers.AutoChain(scoped_template_name("", ""), "content", ["cloneNode", [
+        ESTree.Literal(true),
+      ]]),
+    ),
+    // declare_const("$", Helpers.AutoChain("d", ["create_state_proxy"])),
     ...compiled.prelude,
-    declare_const("pieces", compiled.pieces),
+    Helpers.AutoChain(["_mount", [
+      Helpers.PlainObject({
+        pieces: compiled.pieces,
+        $: Helpers.AutoChain("d", ["create_state_proxy"]),
+        props: ESTree.Identifier("props"),
+      }),
+    ]]),
+    Helpers.AutoChain("target", ["appendChild", [ESTree.Identifier("root")]]),
   ];
 
   return generate(
-    create_program(import_name, module_level_body, function_body),
+    create_program(script_name, module_level_body, function_body),
   );
 }

@@ -1,4 +1,8 @@
-import { ComponentWithHTML, FullPiece, PieceKind } from "@domino/analyzer/types";
+import {
+  ComponentWithHTML,
+  FullPiece,
+  PieceKind,
+} from "@domino/analyzer/types";
 
 export type Piece = FullPiece<ComponentWithHTML>;
 
@@ -8,7 +12,10 @@ export type OptimizedPathKind =
   | "next_sibling"
   | "relative_parent";
 
-type OptimizedPathBase<TMode extends OptimizedPathKind, TPath extends number[]> = {
+type OptimizedPathBase<
+  TMode extends OptimizedPathKind,
+  TPath extends number[],
+> = {
   piece: Piece;
   mode: TMode;
   path: TPath;
@@ -33,7 +40,8 @@ export type NextSiblingOptimizedPath = OptimizedPathBase<"next_sibling", []> & {
 };
 
 export type RelativeParentOptimizedPath =
-  OptimizedPathBase<"relative_parent", [number, ...number[]]> & {
+  & OptimizedPathBase<"relative_parent", [number, ...number[]]>
+  & {
     // Compiler can cache a resolved parent node using this generated key.
     idx: number;
     // Absolute path to the shared parent used for sibling lookup.
@@ -78,35 +86,35 @@ function shared_prefix_length(a: number[], b: number[]): number {
 
 /**
  * Takes in a list of pieces (they are already in order)
- * 
+ *
  * And creates a structure for the compiler that optimizes the paths for three different cases
- * 
- * case 1: child 
+ *
+ * case 1: child
  * this case is only possible if piece_1.kind is PieceKind.Element,
  * if the kind is PieceKind.If / PieceKind.Tile the dataset already handles this,
  * as those have a pieces array with paths that are already relative to the parent
- * 
+ *
  * piece_1 [1, 2]
  * piece_2 [1, 2, 3]
- * 
+ *
  * output:
  * piece_1 [1, 2]
  * piece_2 [3] relative to piece_1
- * 
+ *
  * case 2: direct siblings
  * piece_1 [1, 2]
  * piece_2 [1, 3]
  * piece_3 [1, 4]
- * 
+ *
  * piece_1 [1, 2]
  * piece_2 is the next sibling of piece_1
  * piece_3 is the next sibling of piece_2
- * 
+ *
  * case 3: siblings with gaps in between (i'm not sure if this is worse or better for compilation size & runtime speed)
  * piece_1 [1, 1]
  * piece_2 [1, 3]
  * piece_3 [1, 5]
- * 
+ *
  * relative_parent_1 [1]
  * piece_1 [1] relative to relative_parent_1
  * piece_2 [3] relative to relative_parent_1
@@ -174,8 +182,14 @@ export function optimize_paths(pieces: Piece[]): OptimizedPath[] {
     if (prefix_len > 0 && prefix_len < piece.path.length) {
       const relative_parent_path = piece.path.slice(0, prefix_len);
       const previous_relative_path = previous.path.slice(prefix_len);
-      const relative_path = piece.path.slice(prefix_len) as [number, ...number[]];
-      const previous_relative_path_tuple = previous_relative_path as [number, ...number[]];
+      const relative_path = piece.path.slice(prefix_len) as [
+        number,
+        ...number[],
+      ];
+      const previous_relative_path_tuple = previous_relative_path as [
+        number,
+        ...number[],
+      ];
 
       if (previous_relative_path.length === 0) {
         optimized.push({

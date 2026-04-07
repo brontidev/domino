@@ -42,7 +42,9 @@ export class NestedTileError extends InvalidTileError {
 export class InvalidIdentifierError extends AnalyzeError {
   constructor(readonly kind: "piece" | "tile", readonly invalid_name: string) {
     super(
-      `${kind[0].toUpperCase()}${kind.slice(1)} name \`${invalid_name}\` is not a valid JavaScript identifier`,
+      `${kind[0].toUpperCase()}${
+        kind.slice(1)
+      } name \`${invalid_name}\` is not a valid JavaScript identifier`,
     );
   }
 }
@@ -101,7 +103,10 @@ function is_valid_js_identifier(name: string): boolean {
   return !JS_RESERVED_WORDS.has(name);
 }
 
-function validate_identifier(kind: "piece" | "tile", name: string): AnalyzeError | null {
+function validate_identifier(
+  kind: "piece" | "tile",
+  name: string,
+): AnalyzeError | null {
   if (is_valid_js_identifier(name)) {
     return null;
   }
@@ -170,7 +175,9 @@ export function analyze(
   source: string | HTMLElement,
   compiling: boolean,
 ): Result<Component | ComponentWithHTML, AnalyzeError> {
-  const document = source instanceof HTMLElement ? source : parse_fragment(source);
+  const document = source instanceof HTMLElement
+    ? source
+    : parse_fragment(source);
   if (source instanceof HTMLElement) {
     document.removeWhitespace();
   }
@@ -195,7 +202,9 @@ function analyze_internal(
     if (tile_name_error) return err(tile_name_error);
 
     const path = get_node_path(tile, document);
-    const parent = tile.parentNode instanceof HTMLElement ? tile.parentNode : null;
+    const parent = tile.parentNode instanceof HTMLElement
+      ? tile.parentNode
+      : null;
     const enclosing_tile = parent?.closest("d-tile") ?? null;
     const invalid_enclosing = parent?.closest("d-if, [d-piece]") ?? null;
 
@@ -257,10 +266,14 @@ function analyze_internal(
       const piece_name_error = validate_identifier("piece", name);
       if (piece_name_error) return err(piece_name_error);
 
-      const result = analyze_internal(parse_fragment(element.innerHTML), compiling, {
-        insideDirective: true,
-        insideTile: false,
-      });
+      const result = analyze_internal(
+        parse_fragment(element.innerHTML),
+        compiling,
+        {
+          insideDirective: true,
+          insideTile: false,
+        },
+      );
 
       if (!result.isOk()) return result;
 

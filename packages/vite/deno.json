@@ -1,0 +1,10 @@
+{
+    "name": "@domino/vite",
+    "version": "0.1.0",
+    "imports": {
+        "vite": "npm:vite@^8.0.7"
+    },
+    "exports": {
+        "./component": "./component.ts"
+    }
+}
