@@ -1,0 +1,6 @@
+<d-if piece="banner">
+    <div class="alert">
+        <d-text piece="message" />
+        <button d-piece="dismiss" type="button">×</button>
+    </div>
+</d-if>
