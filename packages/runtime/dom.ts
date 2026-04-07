@@ -20,9 +20,9 @@ export function $if<T>(
   template: HTMLTemplateElement,
   pieces: (node: Node) => T,
 ): ((show: boolean) => boolean) & { pieces?: T } {
-  let nodes: Node[] | undefined;
-
-  const fn: ((show: boolean) => boolean) & { pieces?: T } = (show) => {
+  let nodes: ChildNode[] | undefined;
+  
+  const fn = ((show: boolean) => {
     if (show && !nodes) {
       const root = template.content.cloneNode(true);
       Object.assign(fn, { pieces: pieces(root) });
@@ -33,7 +33,7 @@ export function $if<T>(
       Object.assign(fn, { pieces: undefined });
       nodes = undefined;
     }
-  };
+  }) as unknown as ((show: boolean) => boolean) & { pieces?: T };
 
   return fn;
 }

@@ -1,4 +1,4 @@
-import { Plugin } from "vite";
+import type { Plugin } from "vite";
 import { compile } from "@domino/compiler";
 
 export default function component(): Plugin {
